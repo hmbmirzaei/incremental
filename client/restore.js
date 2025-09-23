@@ -2,6 +2,7 @@ import { createReadStream, renameSync } from 'fs';
 import { MongoClient } from 'mongodb';
 import { EJSON } from 'bson';
 import readline from 'readline';
+import logger from './logger.js';
 
 import { mongodb_port, mongodb_host, restore_received_files, incremental_dir, restored_folder } from './config.js';
 import File from './model.js';
@@ -13,6 +14,7 @@ const uri = `mongodb://${mongodb_host}:${mongodb_port}`;
  * @param {object} diff
  * @returns {object} MongoDB update object
  */
+// Convert oplog $v:2 diff format into standard MongoDB update operators
 const convert_diff_to_update = diff => {
     const update = {};
     if (diff.u) {
@@ -36,6 +38,7 @@ const convert_diff_to_update = diff => {
  * @param {string} line - JSONL line
  * @returns {Promise<boolean>} - true if success, false if error
  */
+// Apply a single oplog entry to the target MongoDB
 const restore_single_line = async (client, line) => {
     try {
         const oplogEntry = EJSON.parse(line);
@@ -70,8 +73,7 @@ const restore_single_line = async (client, line) => {
 
         return true;
     } catch (err) {
-        console.log(err)
-        console.error(`❌ Error restoring line: ${err.message}`);
+        logger.error('Error restoring line', { error: err.message });
         return false;
     }
 };
@@ -118,11 +120,12 @@ const sleep = s => new Promise(resolve => setTimeout(resolve, s * 1000));
             unrestored_file.restored = true;
             await unrestored_file.save();
             renameSync(`${incremental_dir}/${file_name}`, `${restored_folder}/${file_name}`)
+            logger.info('Restore completed', { file: file_name, success, fail });
         } catch (err) {
             if (err.message == 'no unrestored file found')
                 await sleep(1 * 60)
             else
-                console.error(`❌ Error reading or processing file ${file_name}: ${err.message}`);
+                logger.error('Error reading or processing file', { file: file_name, error: err.message });
         }
     }
 })()

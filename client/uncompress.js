@@ -3,6 +3,7 @@ import path from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 
 import { compressed_dir as source_dir, incremental_dir as dest_dir } from './config.js';
+import logger from './logger.js';
 
 /**
  * Extract a password-protected ZIP file using 7z and return the extracted file name
@@ -26,6 +27,7 @@ export const uncompress = async (filename, password) => {
             if (error) {
                 const isWrongPassword = stderr.includes('Wrong password') || stdout.includes('Wrong password');
                 const errMsg = isWrongPassword ? '❌ Incorrect password.' : `Error extracting file:\n${stderr || error.message}`;
+                logger.error('Uncompress error', { file: filename, error: errMsg });
                 return reject(new Error(errMsg));
             }
 
@@ -34,9 +36,10 @@ export const uncompress = async (filename, password) => {
             if (match && match[1]) {
                 const extracted_file_name = path.basename(match[1].trim());
                 unlinkSync(zip_path);
-
+                logger.info('Uncompressed file', { file: filename, extracted: extracted_file_name });
                 return resolve(extracted_file_name.slice(0, -4) + '.jsonl');
             } else {
+                logger.error('Extracted file name not found', { file: filename });
                 return reject(new Error('Extracted file name not found.'));
             }
         });

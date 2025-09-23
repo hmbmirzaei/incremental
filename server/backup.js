@@ -19,7 +19,7 @@ import { temp_file, unsynced } from './config.js' // Config values for temp file
  * then moves the file to the backup folder with a timestamped name.
  * Logs all important steps and errors.
  */
-(async () => {
+const backup = async () => {
     try {
         // Fallback timestamp if no oplog found
         const now = { t: Math.floor(Date.now() / 1000), i: 0 };
@@ -83,14 +83,19 @@ import { temp_file, unsynced } from './config.js' // Config values for temp file
 
         // Use last seen oplog timestamp, or fallback to now if none found
         const final_ts = last_seen_ts || now;
+        
         // Construct the final backup file name with operation counts and timestamp
         const final_file_name = `${unsynced}/incremental-backup-${today_time()}-${final_ts.t}-${final_ts.i}-i${insert_count}-u${update_count}-d${delete_count.toLocaleString()}.jsonl`;
+        
         // Move the temp file to the final backup file
         renameSync(temp_file, final_file_name);
+        
         // Get the size of the backup file for reporting
         const { size } = statSync(final_file_name)
+        
         // Save the last processed oplog timestamp for future incremental backups
         await saveLastTs(final_ts);
+        
         // Log a summary of the backup
         logger.info('Incremental backup completed successfully', {
             insert_count,
@@ -99,8 +104,18 @@ import { temp_file, unsynced } from './config.js' // Config values for temp file
             file: final_file_name,
             size
         });
+
+        //close connetion to db
+        await cursor.close();
+        logger.info('cursor closed');
+
+        //exit app
+        process.exit(0)
     } catch (error) {
         // Log any errors that occur during the backup process
         logger.error('Error in backup process', { error: error.message, stack: error.stack });
     }
-})();
+};
+backup().catch(console.log)
+
+export default backup;

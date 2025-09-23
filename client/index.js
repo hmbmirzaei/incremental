@@ -4,6 +4,7 @@ import { app_port } from './config.js';
 import { auth } from './auth.js';
 import { upload_option, uploaded_full, upload_full_option, uploaded_incremental } from './upload.js';
 import { action } from './password.js';
+import logger from './logger.js';
 
 const app = express();
 app.use(auth);
@@ -17,7 +18,8 @@ app.post('/upload', upload_option.single('file'), uploaded_incremental);
 
 // Full upload route (chunks assembling). auth middleware is applied globally
 app.post('/upload_full', upload_full_option.single('file'), uploaded_full);
+// Start HTTP server
 app.listen(app_port, () => {
-    console.log(`running upload server on port ${app_port}`);
+    logger.info('Upload server running', { port: app_port });
 });
 

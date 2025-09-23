@@ -3,6 +3,7 @@ import { retrieve } from './password.js';
 import { uncompress } from './uncompress.js';
 import { unlinkSync } from 'fs';
 import File from './model.js';
+import logger from './logger.js';
 const sleep = s => new Promise(resolve => setTimeout(resolve, s * 1000));
 
 (async () => {
@@ -19,7 +20,7 @@ const sleep = s => new Promise(resolve => setTimeout(resolve, s * 1000));
             const { ext, name, base } = path.parse(file.filename);
             if (ext !== ".zip") {
                 unlinkSync(file);
-                console.log(`File ${name} removed (not a zip)`);
+                logger.warn('Removed non-zip file record', { name });
                 continue;
             }
             filename = name;
@@ -31,9 +32,9 @@ const sleep = s => new Promise(resolve => setTimeout(resolve, s * 1000));
             file.decompressed = new Date();
             await file.save();
 
-            console.log("Done:", base, "at", new Date().toISOString());
+            logger.info('Decompression done', { file: base, at: new Date().toISOString() });
         } catch (error) {
-            console.error(`Error processing file ${filename}: ${error.message}`);
+            logger.error('Error processing file', { file: filename, error: error.message });
             await sleep(10);
         }
     }

@@ -1,28 +1,27 @@
 import path from 'path';
 import multer, { diskStorage } from 'multer';
 import { unlinkSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream } from 'fs';
-
+import logger from './logger.js';
 import calc from './checksum.js';
 import { compressed_dir as upload_folder, full_folder } from './config.js';
 import File from './model.js';
 
 const regex = /^incremental-backup-(\d{4}-\d{2}-\d{2}--\d{1,2}-\d{2}-\d{2})-(\d+)-(\d+)-/;
 
-// Ensure upload folders exists
+// Ensure upload folders exist
 if (!existsSync(upload_folder))
     mkdirSync(upload_folder);
 
 if (!existsSync(full_folder))
     mkdirSync(full_folder, { recursive: true });
 
-export const upload_full_option = multer({ storage: storage_full });
-
-
-// multer storage configuration for full uploads
+// Multer storage configuration for full uploads
 const storage_full = multer.diskStorage({
     destination: (req, file, cb) => cb(null, full_folder),
     filename: (req, file, cb) => cb(null, file.originalname)
 });
+
+export const upload_full_option = multer({ storage: storage_full });
 
 /**
  * Multer configuration for storing uploaded chunks
@@ -39,7 +38,7 @@ export const upload_option = multer({
 });
 
 /**
- * Handle uploaded file: verify checksum and respond
+ * Handle uploaded incremental zip: verify checksum and respond
  * @param {Request} req
  * @param {Response} res
  */
@@ -79,10 +78,10 @@ export const uploaded_incremental = async (req, res) => {
         pre_saved_file.received_time = new Date().toISOString();
         await pre_saved_file.save();
 
-        console.log(`✅ Checksum OK for file: ${filepath}`);
+        logger.info('Checksum OK for file', { filepath });
         res.json('File received successfully.');
     } catch (error) {
-        console.log(error);
+        logger.error('Upload incremental error', { error: error.message, filepath });
         try { if (filepath && existsSync(filepath)) unlinkSync(filepath); } catch (e) { }
         return res.status(400).send(`❌ ` + (error.message || 'Error occurred during upload.'));
     }
@@ -93,19 +92,15 @@ export const uploaded_incremental = async (req, res) => {
  * Append a chunk file to the final target file
  * @param {string} source_path - path to chunk
  * @param {string} target_path - path to final file
- * @param {Hash} hash - crypto hash object for incremental update
  * @returns {Promise<void>}
  */
-export const append_chunk = (source_path, target_path, hash) => new Promise((resolve, reject) => {
+export const append_chunk = (source_path, target_path, hash = null) => new Promise((resolve, reject) => {
     const rs = createReadStream(source_path);
     const ws = createWriteStream(target_path, { flags: 'a' });
 
     // Handle errors
     rs.on('error', reject);
     ws.on('error', reject);
-
-    // Update incremental hash while streaming
-    rs.on('data', chunk => hash.update(chunk));
 
     // Resolve when write finished
     ws.on('finish', resolve);
@@ -115,7 +110,7 @@ export const append_chunk = (source_path, target_path, hash) => new Promise((res
 });
 
 /**
- * Handle uploaded chunk
+ * Handle uploaded full backup chunk
  * - Verify chunk checksum
  * - Append to final file
  * - Remove temporary chunk
@@ -136,14 +131,11 @@ export const uploaded_full = async (req, res) => {
     mkdirSync(path.dirname(final_file_path), { recursive: true });
 
     try {
-        // Verify checksum of uploaded chunk
-        const chunk_hash = crypto.createHash(algorithm || 'sha256');
-        const rs = createReadStream(uploaded_path);
-        rs.on('data', data => chunk_hash.update(data));
-        await new Promise((r, j) => rs.on('end', r).on('error', j));
+        // Verify checksum of uploaded chunk using checksum.js
+        const calced = await calc(uploaded_path, algorithm || 'sha256');
 
-        const calced = chunk_hash.digest('hex');
         if (calced !== checksum) {
+            // Remove corrupted chunk
             unlinkSync(uploaded_path);
             logger.error(`Checksum failed`, { chunkIndex, fileName });
             return res.status(400).send(`❌ Checksum chunk ${chunkIndex} failed.`);
@@ -151,23 +143,16 @@ export const uploaded_full = async (req, res) => {
 
         logger.info(`Checksum ok`, { chunkIndex, fileName });
 
-        // Maintain incremental hash for final file
-        const incremental_hash = crypto.createHash(algorithm || 'sha256');
-        if (existsSync(final_file_path)) {
-            const existing_rs = createReadStream(final_file_path);
-            for await (const data of existing_rs) incremental_hash.update(data);
-        }
-
-        // Append chunk and update incremental hash
-        await append_chunk(uploaded_path, final_file_path, incremental_hash);
+        // Append chunk to final file
+        await append_chunk(uploaded_path, final_file_path); // pass null because we don't need crypto hash
 
         // Remove temporary chunk
         unlinkSync(uploaded_path);
         logger.info(`Chunk appended`, { chunkIndex, fileName });
 
-        // If last chunk, log final checksum
+        // If last chunk, calculate final checksum with checksum.js
         if (parseInt(chunkIndex) + 1 === parseInt(totalChunks)) {
-            const final_checksum = incremental_hash.digest('hex');
+            const final_checksum = await calc(final_file_path, algorithm || 'sha256');
             logger.info(`Final file checksum: ${final_checksum}`, { fileName });
         }
 
