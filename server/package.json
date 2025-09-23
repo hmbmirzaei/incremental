@@ -1,0 +1,24 @@
+{
+  "name": "api_backup2",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "backup": "node backup.js",
+    "uplaod": "node upload.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.17.0",
+  "dependencies": {
+    "axios": "^1.9.0",
+    "bson": "^6.10.3",
+    "dotenv": "^16.5.0",
+    "form-data": "^4.0.2",
+    "mongodb": "^6.16.0",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0"
+  }
+}
