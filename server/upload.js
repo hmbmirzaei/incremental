@@ -7,14 +7,12 @@ import { statSync, createReadStream, readFileSync, unlinkSync, readdirSync, rena
 import FormData from 'form-data';
 
 import { api, compressed_dir, zip_size, hash_algorithm, unsynced, synced } from './config.js';
-import logger from './logger.js';
 
 /**
  * Request a password for encrypting the zip file from the backup server
  * @param {string} file_name - The base name of the file (without .zip)
  * @returns {Promise<string>} - The password string for encryption
  */
-// Request encryption password from backup server for a specific file
 const get_password = async file_name => {
     try {
         const { data } = await api.post(
@@ -24,7 +22,7 @@ const get_password = async file_name => {
         );
         return data;
     } catch (error) {
-        logger.error('Error getting password from backup server', { error: error.message, file_name });
+        console.log(`${error}`);
         throw new Error('error in get password')
     }
 };
@@ -36,7 +34,6 @@ const get_password = async file_name => {
  * @param {string} password - The password to use for encryption
  * @returns {Promise<string>} - The name of the created zip file (e.g. 'myfile.txt.zip')
  */
-// Compress a single file using 7-Zip AES-256 and provided password
 const compress = async (file_name, file_dir, password) => {
     try {
         const output_path = path.join(compressed_dir, `${file_name}.zip`);
@@ -69,7 +66,6 @@ const compress = async (file_name, file_dir, password) => {
  * @param {string} algorithm - The hash algorithm (e.g. 'sha256')
  * @returns {string} - The checksum as a hex string
  */
-// Calculate checksum synchronously for small files
 const calculate_checksum_sync = (file_path, algorithm) => {
     try {
         const hash = createHash(algorithm);
@@ -87,7 +83,6 @@ const calculate_checksum_sync = (file_path, algorithm) => {
  * @param {string} algorithm - The hash algorithm (e.g. 'sha256')
  * @returns {Promise<string>} - The checksum as a hex string
  */
-// Calculate checksum using streams for large files
 const calculate_checksum_stream = (file_path, algorithm) => new Promise((resolve, reject) => {
     try {
         const hash = createHash(algorithm);
@@ -107,14 +102,13 @@ const calculate_checksum_stream = (file_path, algorithm) => new Promise((resolve
  * @param {string} algorithm - The hash algorithm (e.g. 'sha256')
  * @returns {Promise<string>} - The checksum as a hex string
  */
-// Smart checksum: pick sync or stream based on compressed size
 const checksum = async (filename, algorithm) => {
     const compressed_file_path = path.join(compressed_dir, filename);
     try {
         const { size } = statSync(compressed_file_path);
         const size_mb = size / (1024 * 1024);
 
-        logger.debug('Checksum size info', { file: compressed_file_path, size_mb: size_mb.toFixed(2) });
+        console.log(`[Checksum] ${compressed_file_path} - Size: ${size_mb.toFixed(2)} MB`);
         return size_mb <= zip_size
             ?
             calculate_checksum_sync(compressed_file_path, algorithm)
@@ -122,7 +116,7 @@ const checksum = async (filename, algorithm) => {
             calculate_checksum_stream(compressed_file_path, algorithm)
 
     } catch (error) {
-        logger.error('Checksum error', { error: error.message, file: compressed_file_path });
+        console.log(error)
         throw new Error(error.message || 'error')
     }
 };
@@ -134,7 +128,6 @@ const checksum = async (filename, algorithm) => {
  * @param {string} file_checksum - The checksum string
  * @returns {Promise<void>}
  */
-// Upload the encrypted zip and its checksum to backup server
 const upload_incremental = async (zip_file, file_checksum) => {
     try {
         const file_path = path.join(compressed_dir, zip_file);
@@ -152,11 +145,10 @@ const upload_incremental = async (zip_file, file_checksum) => {
             maxBodyLength: Infinity, // To avoid size limitation
         });
 
-        logger.info('Upload successful', { file: zip_file, response: data });
+        console.log('✅ Server response:', data);
         unlinkSync(file_path)
     } catch (error) {
-        logger.error('Error in upload', { file: zip_file, error: error.message });
-        throw new Error('error in upload');
+        throw new Error('❌ Error in upload:', error.message);
     }
 };
 
@@ -175,12 +167,11 @@ const upload_incremental = async (zip_file, file_checksum) => {
  * Reads unsynced files, compresses, checksums, uploads, and deletes originals
  * @returns {Promise<void>}
  */
-// Iterate over unsynced incrementals: password -> compress -> checksum -> upload -> move
 const upload = async () => {
     try {
         const files_list = await readdirSync(unsynced);
         if (!files_list || files_list.length === 0) {
-            logger.info('No unsynced files found');
+            console.log('No unsynced files found.');
             return;
         }
         for (const file_name of files_list) {
@@ -195,14 +186,13 @@ const upload = async () => {
                 await upload_incremental(zip_file, calc_checksum);
                 // Remove the original file after successful upload
                 renameSync(path.join(unsynced, file_name), path.join(synced, file_name));
-                logger.info('File uploaded and moved to synced', { file: file_name });
             } catch (error) {
-                logger.error('Per-file upload error', { file: file_name, error: error.message });
+                console.log(error.message);
             }
         }
     } catch (error) {
-        logger.error('Uploader error', { error: error.message });
+        console.log(error.message);
     }
 }
-upload().catch(err => logger.error('Fatal upload error', { error: err.message }))
+upload().catch(console.log)
 export default upload;

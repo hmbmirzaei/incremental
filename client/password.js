@@ -1,7 +1,6 @@
 import File from './model.js';
 import { encrypt, decrypt } from './crypto.js';
 import { v4 } from 'uuid';
-import logger from './logger.js';
 
 export const generate = async (filename, type) => {
     try {
@@ -10,7 +9,7 @@ export const generate = async (filename, type) => {
         await File.create({ filename, password: encrypted, file_type: type });
         return password;
     } catch (error) {
-        logger.error('Password generate error', { error: error.message, filename, type })
+        console.log(`${error}`)
         throw new Error(error.message)
     }
 };
@@ -25,7 +24,7 @@ export const retrieve = async (filename, file_type) => {
         await file.save();
         return password;
     } catch (error) {
-        logger.error('Password retrieve error', { error: error.message, filename, file_type })
+        console.log(`${error}`)
         throw new Error(error.message);
     }
 };
@@ -42,7 +41,7 @@ export const action = async (req, res) => {
         const result = await funcs[act](filename, type);
         res.json(result);
     } catch (error) {
-        logger.error('Password action error', { error: error.message, act, filename, type });
+        console.log(error);
         res.status(400).send(`❌ ` + error.message || `Error occurred during password processing`);
     }
 };

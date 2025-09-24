@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import { statSync, createReadStream, readFileSync } from 'fs';
 import { checksum_size_thresholdMB } from './config.js';
-import logger from './logger.js';
 
 /**
  * Calculate checksum synchronously (for small files)
@@ -46,7 +45,7 @@ export default async (filePath, algorithm) => {
         const { size } = statSync(filePath);
         const sizeMB = size / (1024 * 1024);
 
-        logger.debug('Checksum size info', { file: filePath, size_mb: sizeMB.toFixed(2) });
+        console.log(`[Checksum] ${filePath} - Size: ${sizeMB.toFixed(2)} MB`);
         return sizeMB <= checksum_size_thresholdMB
             ?
             calc1(filePath, algorithm)
@@ -54,7 +53,7 @@ export default async (filePath, algorithm) => {
             calc2(filePath, algorithm)
 
     } catch (error) {
-        logger.error('Checksum calc error', { error: error.message, file: filePath });
+        console.log(error)
         throw new Error(error.message || 'Error calculating checksum')
     }
 };

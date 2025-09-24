@@ -19,7 +19,7 @@ import { temp_file, unsynced } from './config.js' // Config values for temp file
  * then moves the file to the backup folder with a timestamped name.
  * Logs all important steps and errors.
  */
-const backup = async () => {
+(async () => {
     try {
         // Fallback timestamp if no oplog found
         const now = { t: Math.floor(Date.now() / 1000), i: 0 };
@@ -115,7 +115,4 @@ const backup = async () => {
         // Log any errors that occur during the backup process
         logger.error('Error in backup process', { error: error.message, stack: error.stack });
     }
-};
-backup().catch(console.log)
-
-export default backup;
+})();

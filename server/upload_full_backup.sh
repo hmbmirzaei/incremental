@@ -121,6 +121,7 @@ send_file() {
 # -----------------------------
 find "$Full_DUMP" -type f | while read -r FILE; do
     RELATIVE_PATH="${FILE#$Full_DUMP/}"
+    log_json "DEBUG" "Preparing to send file: $RELATIVE_PATH" "" "$FILE"
     send_file "$FILE" "$RELATIVE_PATH"
 done
 

@@ -4,11 +4,10 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { mongo } from './config.js';
 import { lastOplog } from './config.js';
-import logger from './logger.js';
 const { uri } = mongo;
 export const execAsync = promisify(exec);
 
-// Get a handle to the MongoDB oplog collection
+//oplog
 export const Oplog = async () => {
     try {
         const client = new MongoClient(uri);
@@ -17,12 +16,11 @@ export const Oplog = async () => {
         const oplog = db.collection('oplog.rs');
         return oplog;
     } catch (error) {
-        logger.error('Error connecting to MongoDB for oplog', { error: error.message });
-        throw new Error('error in database connection');
+        throw 'error in database connection';
     }
 };
 
-// Read the last processed oplog timestamp from file
+// خواندن آخرین timestamp از فایل به صورت باینری
 export const lastTsFile = async () => {
     try {
         const ts = await readFileSync(lastOplog);
@@ -33,15 +31,15 @@ export const lastTsFile = async () => {
         return { t, i };
     } catch (error) {
         if (error.code == 'ENOENT') {
-            logger.warn('Initial last-oplog timestamp file not found', { file: lastOplog });
+            console.log('initial LAST OPLOG TIME not found');
             return false
         }
-        logger.error('Error reading last-oplog timestamp file', { error: error.message });
+        console.log(`${error}`);
         return false;
     }
 };
 
-// Read the latest timestamp directly from the oplog
+// خواندن آخرین timestamp از oplog
 export const lastTsFromDB = async () => {
     try {
         const oplog = await Oplog();
@@ -49,22 +47,23 @@ export const lastTsFromDB = async () => {
         if (!lastRecord.length)
             return false
 
-        const { ts } = lastRecord[0];  // timestamp of the last record
-        return { t: ts.getHighBits(), i: ts.getLowBits() };  // extract t and i
+        const { ts } = lastRecord[0];  // استخراج timestamp از آخرین رکورد
+        return { t: ts.getHighBits(), i: ts.getLowBits() };  // استخراج t و i
 
     } catch (error) {
-        logger.error('Error reading last timestamp from oplog', { error: error.message });
+        console.error('Error reading last timestamp from oplog:', error);
         return false;
     }
 };
 
-// Persist the last processed oplog timestamp into file
+// ذخیره آخرین timestamp در فایل به صورت باینری
 export const saveLastTs = async (ts) => {
+    console.log({ ts })
     try {
         await writeFileSync(lastOplog, JSON.stringify({ t: ts.t, i: ts.i }));
-        logger.info('Last timestamp saved successfully', { t: ts.t, i: ts.i, file: lastOplog });
+        console.log('Last timestamp saved successfully');
     } catch (error) {
-        logger.error('Error saving last timestamp', { error: error.message });
+        console.error('Error saving last timestamp:', error);
     }
 };
 
@@ -73,7 +72,7 @@ export const today_time = (date = new Date()) => {
     if (!(date instanceof Date) || isNaN(date)) 
         throw new Error('Invalid date provided');
 
-    // Convert date to Persian calendar using English digits
+    // تبدیل تاریخ به شمسی با ارقام انگلیسی
     let t = date
         .toLocaleDateString("fa-IR")
         .replace(/([۰-۹])/g, (token) =>
@@ -86,7 +85,7 @@ export const today_time = (date = new Date()) => {
 
     const datePart = `${t[0]}-${t[1].padStart(2, '0')}-${t[2].padStart(2, '0')}`;
 
-    // Time: convert to HH-mm-ss with English digits
+    // زمان: تبدیل به فرمت HH-mm-ss با ارقام انگلیسی
     let timePart = date
         .toLocaleTimeString("fa-IR", { hour12: false })
         .replace(/([۰-۹])/g, (token) =>

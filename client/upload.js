@@ -8,14 +8,14 @@ import File from './model.js';
 
 const regex = /^incremental-backup-(\d{4}-\d{2}-\d{2}--\d{1,2}-\d{2}-\d{2})-(\d+)-(\d+)-/;
 
-// Ensure upload folders exist
+// Ensure upload folders exists
 if (!existsSync(upload_folder))
     mkdirSync(upload_folder);
 
 if (!existsSync(full_folder))
     mkdirSync(full_folder, { recursive: true });
 
-// Multer storage configuration for full uploads
+// multer storage configuration for full uploads
 const storage_full = multer.diskStorage({
     destination: (req, file, cb) => cb(null, full_folder),
     filename: (req, file, cb) => cb(null, file.originalname)
@@ -38,7 +38,7 @@ export const upload_option = multer({
 });
 
 /**
- * Handle uploaded incremental zip: verify checksum and respond
+ * Handle uploaded file: verify checksum and respond
  * @param {Request} req
  * @param {Response} res
  */
@@ -78,10 +78,10 @@ export const uploaded_incremental = async (req, res) => {
         pre_saved_file.received_time = new Date().toISOString();
         await pre_saved_file.save();
 
-        logger.info('Checksum OK for file', { filepath });
+        console.log(`✅ Checksum OK for file: ${filepath}`);
         res.json('File received successfully.');
     } catch (error) {
-        logger.error('Upload incremental error', { error: error.message, filepath });
+        console.log(error);
         try { if (filepath && existsSync(filepath)) unlinkSync(filepath); } catch (e) { }
         return res.status(400).send(`❌ ` + (error.message || 'Error occurred during upload.'));
     }
@@ -110,7 +110,7 @@ export const append_chunk = (source_path, target_path, hash = null) => new Promi
 });
 
 /**
- * Handle uploaded full backup chunk
+ * Handle uploaded chunk
  * - Verify chunk checksum
  * - Append to final file
  * - Remove temporary chunk
