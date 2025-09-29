@@ -7,15 +7,7 @@ source .env.sh
 set +a
 
 # logger function
-
-log() {
-	local level="$1"
-	local message="$2"
-	local ts
-	ts=$(date +"%Y-%m-%d %H:%M:%S")
-	echo "{"level":"$level","message":"$message","timestamp":"$ts"}" | tee -a "$LOG_FILE"
-}
-
+source ./logger.sh
 # recreate backup folder
 
 rm -rf "$Full_DUMP"

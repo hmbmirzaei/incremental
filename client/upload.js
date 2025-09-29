@@ -1,9 +1,9 @@
 import path from 'path';
 import multer, { diskStorage } from 'multer';
-import { unlinkSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream } from 'fs';
+import { unlinkSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, renameSync } from 'fs';
 import logger from './logger.js';
 import calc from './checksum.js';
-import { compressed_dir as upload_folder, full_folder } from './config.js';
+import { compressed_dir as upload_folder, full_folder, tmp_folder } from './config.js';
 import File from './model.js';
 
 const regex = /^incremental-backup-(\d{4}-\d{2}-\d{2}--\d{1,2}-\d{2}-\d{2})-(\d+)-(\d+)-/;
@@ -87,78 +87,94 @@ export const uploaded_incremental = async (req, res) => {
     }
 };
 
-
-/**
- * Append a chunk file to the final target file
- * @param {string} source_path - path to chunk
- * @param {string} target_path - path to final file
- * @returns {Promise<void>}
- */
-export const append_chunk = (source_path, target_path, hash = null) => new Promise((resolve, reject) => {
-    const rs = createReadStream(source_path);
-    const ws = createWriteStream(target_path, { flags: 'a' });
-
-    // Handle errors
-    rs.on('error', reject);
-    ws.on('error', reject);
-
-    // Resolve when write finished
-    ws.on('finish', resolve);
-
-    // Pipe chunk to final file
-    rs.pipe(ws);
-});
-
 /**
  * Handle uploaded chunk
  * - Verify chunk checksum
- * - Append to final file
- * - Remove temporary chunk
+ * - Store chunk in tmp folder
  * - Log all steps
  */
 export const uploaded_full = async (req, res) => {
-    const { chunkIndex, fileName, checksum, totalChunks } = req.body;
+    const { chunk_index, file_name, checksum, total_chunks } = req.body;
     const { algorithm } = req.headers;
 
-    const uploaded_path = req.file?.path;
-    if (!uploaded_path || !existsSync(uploaded_path)) {
-        logger.error(`Chunk ${chunkIndex} not saved`, { chunkIndex, fileName });
-        return res.status(400).send(`❌ chunk ${chunkIndex} not saved.`);
-    }
+    try {
+        logger.info(`chunk recaived`, { chunk_index, total_chunks })
+        const uploaded_path = req.file?.path;
+        if (!uploaded_path || !existsSync(uploaded_path)) {
+            logger.error(`Chunk ${chunk_index} not saved`, { chunk_index, file_name });
+            throw new Error(`❌ chunk ${chunk_index} not saved.`);
+        }
 
-    // Build final file path and create directories
-    const final_file_path = path.join(full_folder, fileName);
-    mkdirSync(path.dirname(final_file_path), { recursive: true });
+        const chunk_folder = path.join(tmp_folder, file_name);
+        mkdirSync(chunk_folder, { recursive: true });
+
+        // verify checksum
+        const calced = await calc(uploaded_path, algorithm || "sha256");
+        if (calced !== checksum) {
+            logger.error(`❌ checksum mismatch on chunk ${chunk_index}`, { chunk_index, file_name });
+            throw new Error(`❌ checksum mismatch on chunk ${chunk_index}`);
+        }
+
+        // move chunk to tmp folder
+        const chunk_file_path = path.join(chunk_folder, String(chunk_index).padStart(6, "0"));
+        renameSync(uploaded_path, chunk_file_path);
+
+        logger.info(`Chunk ${chunk_index} stored`, { file_name });
+        res.json(`✅ chunk ${chunk_index} stored for ${file_name}`);
+    } catch (err) {
+        console.log(err)
+        logger.error(`Error handling chunk ${chunk_index}`, { file_name, error: err.message });
+        res.status(500).send(`❌ error in chunk ${chunk_index}: ${err.message}`);
+    }
+};
+
+/**
+ * Assemble all chunks for a given file
+ * - Append chunks in order
+ * - Delete each chunk after append
+ * - Compute final checksum
+ */
+export const assemble_file = async (req, res) => {
+    const { file_name, total_chunks } = req.body;
 
     try {
-        // Verify checksum of uploaded chunk using checksum.js
-        const calced = await calc(uploaded_path, algorithm || 'sha256');
+        const chunk_folder = path.join(tmp_folder, file_name);
+        const final_file_path = path.join(full_folder, file_name);
 
-        if (calced !== checksum) {
-            // Remove corrupted chunk
-            unlinkSync(uploaded_path);
-            logger.error(`Checksum failed`, { chunkIndex, fileName });
-            return res.status(400).send(`❌ Checksum chunk ${chunkIndex} failed.`);
+        if (!existsSync(chunk_folder)) {
+            logger.error(`❌ no chunks found for ${file_name}`);
+            throw new Error(`❌ no chunks found for ${file_name}`);
         }
 
-        logger.info(`Checksum ok`, { chunkIndex, fileName });
+        mkdirSync(path.dirname(final_file_path), { recursive: true });
+        const ws = createWriteStream(final_file_path);
 
-        // Append chunk to final file
-        await append_chunk(uploaded_path, final_file_path); // pass null because we don't need crypto hash
+        for (let i = 0; i < total_chunks; i++) {
+            const chunk_path = path.join(chunk_folder, String(i).padStart(6, "0"));
+            if (!existsSync(chunk_path)) {
+                logger.error(`❌ missing chunk ${i}`, { file_name });
+                throw new Error(`❌ missing chunk ${i}`);
+            }
 
-        // Remove temporary chunk
-        unlinkSync(uploaded_path);
-        logger.info(`Chunk appended`, { chunkIndex, fileName });
+            await new Promise((resolve, reject) => {
+                const rs = createReadStream(chunk_path);
+                rs.pipe(ws, { end: false });
+                rs.on("end", resolve);
+                rs.on("error", reject);
+            });
 
-        // If last chunk, calculate final checksum with checksum.js
-        if (parseInt(chunkIndex) + 1 === parseInt(totalChunks)) {
-            const final_checksum = await calc(final_file_path, algorithm || 'sha256');
-            logger.info(`Final file checksum: ${final_checksum}`, { fileName });
+            unlinkSync(chunk_path); // remove chunk after append
+            logger.info(`Chunk ${i} appended and removed`, { file_name });
         }
 
-        res.send(`✅ chunk ${chunkIndex} added to ${fileName}`);
+        ws.end();
+
+        const final_checksum = await calc(final_file_path, "sha256");
+        logger.info(`Final checksum: ${final_checksum}`, { file_name });
+
+        res.send(`✅ file ${file_name} assembled with checksum ${final_checksum}`);
     } catch (err) {
-        logger.error(`Error in chunk ${chunkIndex}`, { fileName, error: err.message });
-        res.status(500).send(`❌ error in chunk ${chunkIndex}: ${err.message}`);
+        logger.error(`Error assembling file ${file_name}`, { error: err.message });
+        res.status(500).send(`❌ error assembling ${file_name}: ${err.message}`);
     }
 };

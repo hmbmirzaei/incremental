@@ -13,7 +13,8 @@ const {
     RESTORE,
     RESTORED_FOLDER,
     LOG_FOLDER,
-    FULL_FOLDER
+    FULL_FOLDER,
+    TEMP_FOLDER
 } = process.env;
 
 
@@ -30,3 +31,4 @@ export const restore_received_files = RESTORE === 'true' || RESTORE === true;
 export const restored_folder = RESTORED_FOLDER || './restored';
 export const log_folder = LOG_FOLDER || './logs';
 export const full_folder = FULL_FOLDER || './full';
+export const tmp_folder = TEMP_FOLDER || './tmp'
