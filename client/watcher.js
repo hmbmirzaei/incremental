@@ -34,7 +34,7 @@ const sleep = s => new Promise(resolve => setTimeout(resolve, s * 1000));
             console.log("Done:", base, "at", new Date().toISOString());
         } catch (error) {
             console.error(`Error processing file ${filename}: ${error.message}`);
-            await sleep(10);
+            await sleep(10 * 60);
         }
     }
 })();

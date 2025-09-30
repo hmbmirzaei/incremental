@@ -1,6 +1,6 @@
 import path from 'path';
 import multer, { diskStorage } from 'multer';
-import { unlinkSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, renameSync } from 'fs';
+import { unlinkSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, renameSync, readdirSync } from 'fs';
 import logger from './logger.js';
 import calc from './checksum.js';
 import { compressed_dir as upload_folder, full_folder, tmp_folder } from './config.js';
@@ -136,7 +136,6 @@ export const uploaded_full = async (req, res) => {
  */
 export const assemble_file = async (req, res) => {
     const { file_name, total_chunks } = req.body;
-
     try {
         const chunk_folder = path.join(tmp_folder, file_name);
         const final_file_path = path.join(full_folder, file_name);
