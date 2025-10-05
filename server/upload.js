@@ -6,6 +6,7 @@ import { createHash } from 'crypto';
 import { statSync, createReadStream, readFileSync, unlinkSync, readdirSync, renameSync } from 'fs';
 import FormData from 'form-data';
 
+import logger from './logger.js';
 import { api, compressed_dir, zip_size, hash_algorithm, unsynced, synced } from './config.js';
 
 /**
@@ -20,12 +21,14 @@ const get_password = async file_name => {
             { filename: `${file_name}.zip` },
             { headers: { type: 'mongodb' } },
         );
+        logger.info(`[Password] Generated for ${file_name}`);
         return data;
     } catch (error) {
-        console.log(`${error}`);
-        throw new Error('error in get password')
+        logger.error(`[Password] Failed to get password for ${file_name}: ${error.message}`);
+        throw new Error('Error in get password');
     }
 };
+
 
 /**
  * Compress a file using 7z with AES256 encryption and the provided password
@@ -37,28 +40,29 @@ const get_password = async file_name => {
 const compress = async (file_name, file_dir, password) => {
     try {
         const output_path = path.join(compressed_dir, `${file_name}.zip`);
+        if (!existsSync(compressed_dir)) mkdirSync(compressed_dir, { recursive: true });
 
-        if (!existsSync(compressed_dir))
-            mkdirSync(compressed_dir, { recursive: true });
-
-        // Extract the base file name (e.g. 'myfile.txt' from 'myfile.txt')
         const base_file = path.basename(file_name);
-
-        // Command: go to the file directory and compress only the base file
         const command = `cd "${file_dir}" && 7z a -tzip -mem=AES256 -p"${password}" "${path.resolve(output_path)}" "${base_file}"`;
+
+        logger.info(`[Compress] Running: ${command}`);
 
         return new Promise((resolve, reject) => {
             exec(command, (error, stdout, stderr) => {
                 if (error) {
-                    return reject(new Error(`Compression error:\n${stderr || error.message}`));
+                    logger.error(`[Compress] Error: ${stderr || error.message}`);
+                    return reject(new Error(`Compression error: ${stderr || error.message}`));
                 }
+                logger.info(`[Compress] Created ${file_name}.zip`);
                 resolve(`${file_name}.zip`);
             });
         });
     } catch (error) {
-        throw new Error('error in compress')
+        logger.error(`[Compress] Unexpected error for ${file_name}: ${error.message}`);
+        throw new Error('Error in compress');
     }
 };
+
 
 /**
  * Calculate the checksum of a file synchronously (for small files)
@@ -71,9 +75,12 @@ const calculate_checksum_sync = (file_path, algorithm) => {
         const hash = createHash(algorithm);
         const file_buffer = readFileSync(file_path);
         hash.update(file_buffer);
-        return hash.digest('hex');
+        const digest = hash.digest('hex');
+        logger.info(`[Checksum] Calculated sync: ${digest}`);
+        return digest;
     } catch (error) {
-        throw new Error('error in calculate_checksum_sync')
+        logger.error(`[Checksum] Sync error: ${error.message}`);
+        throw new Error('Error in calculate_checksum_sync');
     }
 };
 
@@ -88,10 +95,18 @@ const calculate_checksum_stream = (file_path, algorithm) => new Promise((resolve
         const hash = createHash(algorithm);
         const stream = createReadStream(file_path);
 
-        stream.on('error', err => reject(err));
+        stream.on('error', err => {
+            logger.error(`[Checksum] Stream error: ${err.message}`);
+            reject(err);
+        });
         stream.on('data', chunk => hash.update(chunk));
-        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('end', () => {
+            const digest = hash.digest('hex');
+            logger.info(`[Checksum] Calculated stream: ${digest}`);
+            resolve(digest);
+        });
     } catch (err) {
+        logger.error(`[Checksum] Unexpected stream error: ${err.message}`);
         reject(err);
     }
 });
@@ -108,16 +123,15 @@ const checksum = async (filename, algorithm) => {
         const { size } = statSync(compressed_file_path);
         const size_mb = size / (1024 * 1024);
 
-        console.log(`[Checksum] ${compressed_file_path} - Size: ${size_mb.toFixed(2)} MB`);
+        logger.info(`[Checksum] ${compressed_file_path} - Size: ${size_mb.toFixed(2)} MB`);
+
         return size_mb <= zip_size
-            ?
-            calculate_checksum_sync(compressed_file_path, algorithm)
-            :
-            calculate_checksum_stream(compressed_file_path, algorithm)
+            ? calculate_checksum_sync(compressed_file_path, algorithm)
+            : calculate_checksum_stream(compressed_file_path, algorithm);
 
     } catch (error) {
-        console.log(error)
-        throw new Error(error.message || 'error')
+        logger.error(`[Checksum] Failed: ${error.message}`);
+        throw new Error(error.message || 'Error in checksum');
     }
 };
 
@@ -138,19 +152,41 @@ const upload_incremental = async (zip_file, file_checksum) => {
         form.append('filename', zip_file);
         form.append('algorithm', hash_algorithm);
 
+        logger.info(`[Upload] Sending ${zip_file} with checksum ${file_checksum}`);
+
         const { data } = await api.post('/upload', form, {
-            headers: {
-                ...form.getHeaders(),
-            },
-            maxBodyLength: Infinity, // To avoid size limitation
+            headers: { ...form.getHeaders() },
+            maxBodyLength: Infinity,
         });
 
-        console.log('✅ Server response:', data);
-        unlinkSync(file_path)
+        logger.info(`[Upload] Success: ${data}`);
+        unlinkSync(file_path);
+        logger.info(`[Cleanup] Removed ${file_path}`);
     } catch (error) {
-        throw new Error('❌ Error in upload:', error.message);
+        logger.error(`[Upload] Failed for ${zip_file}: ${error.message}`);
+        throw new Error(`Error in upload: ${error.message}`);
     }
 };
+
+//process a file
+const process_file = async (file_name, unsynced, hash_algorithm) => {
+    try {
+        logger.info(`[Main] Processing file: ${file_name}`);
+
+        const password = await get_password(file_name);
+        const zipFile = await compress(file_name, unsynced, password);
+        const calcChecksum = await checksum(zipFile, hash_algorithm);
+        await upload_incremental(zipFile, calcChecksum);
+
+        renameSync(path.join(unsynced, file_name), path.join(synced, file_name));
+        logger.info(`[Main] Moved ${file_name} to synced`);
+    } catch (error) {
+        logger.error(`[Main] Error with ${file_name}: ${error.message}`);
+        // اگه بخوای متوقف شه:
+        // throw error;
+    }
+}
+
 
 // sync backup
 //    1. (path) --< get list of files >--> (filename)
@@ -165,34 +201,25 @@ const upload_incremental = async (zip_file, file_checksum) => {
 /**
  * Main uploader function
  * Reads unsynced files, compresses, checksums, uploads, and deletes originals
- * @returns {Promise<void>}
  */
-const upload = async () => {
-    try {
-        const files_list = await readdirSync(unsynced);
-        if (!files_list || files_list.length === 0) {
-            console.log('No unsynced files found.');
-            return;
+// infinite uploader loop
+(async () => {
+    while (true) {
+        try {
+            let files_list = readdirSync(unsynced)
+                .sort((a, b) => statSync(path.join(unsynced, a)).mtimeMs - statSync(path.join(unsynced, b)).mtimeMs);
+
+            if (!files_list || files_list.length === 0) 
+                throw new Error('No unsynced files found. Waiting 10 minutes...')
+
+
+            const file_name = files_list[0]; // اولین فایل (قدیمی‌ترین)
+            await process_file(file_name, unsynced, hash_algorithm);
+
+        } catch (error) {
+            logger.error(`[Main] Fatal error: ${error.message}`);
+            // در صورت خطا هم ۱۰ دقیقه صبر کنه
+            await new Promise(res => setTimeout(res, 10 * 60 * 1000));
         }
-        for (const file_name of files_list) {
-            try {
-                // Get password for this file
-                const password = await get_password(file_name);
-                // Compress the file (file_name is the file, unsynced is the directory)
-                const zip_file = await compress(file_name, unsynced, password);
-                // Calculate checksum of the zip file
-                const calc_checksum = await checksum(zip_file, hash_algorithm);
-                // Upload the zip file and its checksum
-                await upload_incremental(zip_file, calc_checksum);
-                // Remove the original file after successful upload
-                renameSync(path.join(unsynced, file_name), path.join(synced, file_name));
-            } catch (error) {
-                console.log(error.message);
-            }
-        }
-    } catch (error) {
-        console.log(error.message);
     }
-}
-upload().catch(console.log)
-export default upload;
+})();

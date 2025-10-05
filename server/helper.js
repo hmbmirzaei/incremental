@@ -4,6 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { mongo } from './config.js';
 import { lastOplog } from './config.js';
+import logger from './logger.js';
 const { uri } = mongo;
 export const execAsync = promisify(exec);
 
@@ -31,10 +32,10 @@ export const lastTsFile = async () => {
         return { t, i };
     } catch (error) {
         if (error.code == 'ENOENT') {
-            console.log('initial LAST OPLOG TIME not found');
+            logger.error('initial LAST OPLOG TIME not found');
             return false
         }
-        console.log(`${error}`);
+        logger.error(`${error}`);
         return false;
     }
 };
@@ -51,19 +52,18 @@ export const lastTsFromDB = async () => {
         return { t: ts.getHighBits(), i: ts.getLowBits() };  // استخراج t و i
 
     } catch (error) {
-        console.error('Error reading last timestamp from oplog:', error);
+        logger.error('Error reading last timestamp from oplog:', error);
         return false;
     }
 };
 
 // ذخیره آخرین timestamp در فایل به صورت باینری
 export const saveLastTs = async (ts) => {
-    console.log({ ts })
     try {
         await writeFileSync(lastOplog, JSON.stringify({ t: ts.t, i: ts.i }));
-        console.log('Last timestamp saved successfully');
+        logger.info('Last timestamp saved successfully');
     } catch (error) {
-        console.error('Error saving last timestamp:', error);
+        logger.error('Error saving last timestamp:', error);
     }
 };
 
