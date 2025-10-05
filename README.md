@@ -198,6 +198,15 @@ All endpoints require header: `apikey: <APIKEY>`
 - Permission errors writing files → validate paths in env and process permissions.
 - 7-Zip not found → ensure it is installed and `7z` is in PATH.
 
+---
+
 ## References
 - [GitHub Repository](https://github.com/hmbmirzaei/incremental)
 - [LinkedIn Post](https://www.linkedin.com/posts/hossein-mirzaei-51562514a_github-hmbmirzaeiincremental-mongoincrementalbackup-activity-7376206668243628032-lTW7?utm_source=share&utm_medium=member_desktop&rcm=ACoAACQLLqEBCvOinVB6gOgOcfANqMtWOdLqlXE)
+
+## Contact
+- 📧 Email: [hmb.mirzaei@gmail.com](mailto:hmb.mirzaei@gmail.com)  
+- 🔗 LinkedIn: [Hossein Mirzaei](https://www.linkedin.com/in/hossein-mirzaei-51562514a/)
+
+## License
+MIT License © 2025 [Hossein Mirzaei](https://github.com/hmbmirzaei)
