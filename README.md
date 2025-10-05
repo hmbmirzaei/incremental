@@ -197,3 +197,7 @@ All endpoints require header: `apikey: <APIKEY>`
 - No oplog data → ensure MongoDB is a replica set with an oplog and the URI in `server/config.js` points to `local` db.
 - Permission errors writing files → validate paths in env and process permissions.
 - 7-Zip not found → ensure it is installed and `7z` is in PATH.
+
+## References
+- [GitHub Repository](https://github.com/hmbmirzaei/incremental)
+- [LinkedIn Post](https://www.linkedin.com/posts/hossein-mirzaei-51562514a_github-hmbmirzaeiincremental-mongoincrementalbackup-activity-7376206668243628032-lTW7?utm_source=share&utm_medium=member_desktop&rcm=ACoAACQLLqEBCvOinVB6gOgOcfANqMtWOdLqlXE)
